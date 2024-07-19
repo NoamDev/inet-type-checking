@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::vec;
 
 use slotmap::{new_key_type, SlotMap};
@@ -17,14 +18,30 @@ pub enum PartialType {
     Free(Option<usize>)
 }
 
-impl Type {
-    pub fn to_string(&self) -> String {
-        match self {
+fn alphabetize(n: usize) -> String{
+    let alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string();
+    let mut res = String::new();
+    let mut i = n;
+    loop {
+        res.push(alphabet.chars().nth(i%26).unwrap());
+        i /= 26;
+        if i == 0 {
+            return res;
+        } else {
+            i -= 1;
+        }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             Type::Arrow(a, b) => {
                 format!("({}->{})", a.to_string(), b.to_string())
             }
-            Type::Var(i) => {i.to_string()}
-        }
+            Type::Var(i) => { alphabetize(*i) }
+        };
+        write!(f, "{}", str)
     }
 }
 
