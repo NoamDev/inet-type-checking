@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use std::iter::zip;
-use crate::net::{Net, PartialTypeKey};
+use crate::net::{Net, PartialTypeKey, Type};
 use crate::util::alphabetize;
 
 #[derive(Debug)]
@@ -23,18 +23,19 @@ pub fn var(i: usize) -> Expr{
 }
 
 impl Expr {
-    pub fn to_named_string(&self, vars: &mut Vec<String>) -> String {
+    pub fn to_named_string(&self, vars: &mut Vec<String>, next_variable: &mut usize) -> String {
         match self {
             Expr::Lam(body, _) => {
-                let var = alphabetize(vars.len()).to_lowercase();
+                let var = alphabetize(*next_variable).to_lowercase();
+                *next_variable += 1;
                 vars.push(var.clone());
-                let body_str = body.to_named_string(vars);
+                let body_str = body.to_named_string(vars, next_variable);
                 assert_eq!(vars.pop().unwrap(), var);
                 format!("λ{}.{}", var, body_str)
             }
             Expr::App(f, v, _) => {
-                let f_str = f.to_named_string(vars);
-                let v_str = v.to_named_string(vars);
+                let f_str = f.to_named_string(vars, next_variable);
+                let v_str = v.to_named_string(vars, next_variable);
                 format!("({} {})", f_str, v_str)
             }
             Expr::Var(i, _) => {
@@ -42,19 +43,20 @@ impl Expr {
             }
         }
     }
-    pub fn to_annotated_string(&self, net: &Net, vars: &mut Vec<String>) -> String {
+    pub fn to_annotated_string(&self, net: &Net, vars: &mut Vec<String>, next_variable: &mut usize) -> String {
         match self {
             Expr::Lam(body, type_key) => {
-                let var = alphabetize(vars.len()).to_lowercase();
+                let var = alphabetize(*next_variable).to_lowercase();
                 vars.push(var.clone());
-                let body_str = body.to_annotated_string(net, vars);
+                *next_variable += 1;
+                let body_str = body.to_annotated_string(net, vars, next_variable);
                 assert_eq!(vars.pop().unwrap(), var);
                 let annotation = net.read_type(type_key.unwrap()).to_string();
                 format!("{{λ{var}.{body_str} : {annotation}}}")
             }
             Expr::App(f, v, type_key) => {
-                let f_str = f.to_annotated_string(net,vars);
-                let v_str = v.to_annotated_string(net, vars);
+                let f_str = f.to_annotated_string(net,vars, next_variable);
+                let v_str = v.to_annotated_string(net, vars, next_variable);
                 let annotation = net.read_type(type_key.unwrap()).to_string();
                 format!("{{({f_str} {v_str}) : {annotation}}}")
             }
@@ -62,6 +64,35 @@ impl Expr {
                 let var = vars[vars.len() - i - 1].clone();
                 let annotation = net.read_type(type_key.unwrap()).to_string();
                 format!("{{{var} : {annotation}}}")
+            }
+        }
+    }
+    pub fn to_variable_annotated_string(&self, net: &Net, vars: &mut Vec<String>, next_variable: &mut usize) -> String {
+        match self {
+            Expr::Lam(body, type_key) => {
+                let var = alphabetize(*next_variable).to_lowercase();
+                *next_variable += 1;
+                vars.push(var.clone());
+                let body_str = body.to_variable_annotated_string(net, vars, next_variable);
+                assert_eq!(vars.pop().unwrap(), var);
+                let lambda_type = net.read_type(type_key.unwrap());
+                let variable_type = match lambda_type {
+                    Type::Arrow(v, _b) => {*v}
+                    Type::Var(_) => {
+                        panic!("lambda has non lambda type");
+                    }
+                };
+                let variable_annotation = variable_type.to_string();
+                format!("λ{{{var}: {variable_annotation}}}.{body_str}")
+            }
+            Expr::App(f, v, _type_key) => {
+                let f_str = f.to_variable_annotated_string(net,vars, next_variable);
+                let v_str = v.to_variable_annotated_string(net, vars, next_variable);
+                format!("({f_str} {v_str})")
+            }
+            Expr::Var(i, _type_key) => {
+                let var = vars[vars.len() - i - 1].clone();
+                format!("{var}")
             }
         }
     }

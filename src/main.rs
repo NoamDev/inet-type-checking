@@ -95,7 +95,7 @@ pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<Eql>) -> Tree
 
 fn infer(term: &mut Expr) {
     println!("{}", term.to_string());
-    println!("{}", term.to_named_string(&mut vec![]));
+    println!("{}", term.to_named_string(&mut vec![], &mut 0));
 
     let mut net = Net::default();
     let lam = add_lambda(&mut net, term, &mut vec![]);
@@ -112,7 +112,8 @@ fn infer(term: &mut Expr) {
     if net.is_equated() {
         net.assign_free_vars();
         println!("type: {}", net.read_type(type_key).to_string());
-        println!("{}", term.to_annotated_string(&net, &mut vec![]));
+        println!("{}", term.to_variable_annotated_string(&net, &mut vec![], &mut 0));
+        println!("{}", term.to_annotated_string(&net, &mut vec![], &mut 0));
     } else {
         println!("Not STLC typable");
     }
