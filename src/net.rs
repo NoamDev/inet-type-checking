@@ -4,6 +4,8 @@ use std::vec;
 
 use slotmap::{new_key_type, SlotMap};
 
+use crate::util::alphabetize;
+
 #[derive(Debug)]
 pub enum Type {
     Arrow(Box<Type>, Box<Type>),
@@ -16,21 +18,6 @@ pub enum PartialType {
     Arrow(PartialTypeKey, PartialTypeKey),
     Var(PartialTypeKey),
     Free(Option<usize>)
-}
-
-fn alphabetize(n: usize) -> String{
-    let alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string();
-    let mut res = String::new();
-    let mut i = n;
-    loop {
-        res.push(alphabet.chars().nth(i%26).unwrap());
-        i /= 26;
-        if i == 0 {
-            return res;
-        } else {
-            i -= 1;
-        }
-    }
 }
 
 impl Display for Type {
@@ -48,12 +35,10 @@ impl Display for Type {
 #[derive(Debug)]
 pub enum Node {
     Con {
+        type_key: PartialTypeKey,
         a: Box<Tree>,
         b: Box<Tree>,
-    },
-    Free {
-        type_id: PartialTypeKey,
-    },
+    }
 }
 
 #[derive(Debug)]
@@ -77,16 +62,17 @@ struct EquationRef {
 new_key_type! { struct EquationKey; }
 #[derive(Debug)]
 struct Equation {
+    pub type_key: PartialTypeKey,
     pub trees: Vec<Node>,
     pub refs: Vec<EquationRefKey>,
 }
 
 #[derive(Default, Debug)]
 pub struct Net {
-    pub equations: SlotMap<EquationKey, Equation>,
-    pub equation_refs: SlotMap<EquationRefKey, EquationRef>,
-    pub redexes: Vec<Vec<Node>>,
-    pub types: SlotMap<PartialTypeKey, PartialType>,
+    equations: SlotMap<EquationKey, Equation>,
+    equation_refs: SlotMap<EquationRefKey, EquationRef>,
+    redexes: Vec<(PartialTypeKey, Vec<Node>)>,
+    types: SlotMap<PartialTypeKey, PartialType>,
 }
 
 impl Net {
@@ -98,67 +84,58 @@ impl Net {
     }
     pub fn reduce(&mut self) {
         let  r = self.redexes.pop();
-        if let Some(r) = r {
-            let mut eq1_trees = vec![];
-            let mut eq2_trees = vec![];
-            let mut eq1_eqs = vec![];
-            let mut eq2_eqs = vec![];
-            let mut free = vec![];
-            
-            for t in r {
+        if let Some((redex_type_key, nodes)) = r {
+            let mut a_nodes = vec![];
+            let mut b_nodes = vec![];
+            let mut a_eqls = vec![];
+            let mut b_eqls = vec![];
+
+            assert!(nodes.len() > 0);
+
+            for t in nodes {
                 match t {
-                    Node::Con {a, b } => {
+                    Node::Con { type_key, a, b } => {
+                        self.set_type(type_key, PartialType::Arrow(
+                            self.type_key(&a),
+                            self.type_key(&b),
+                        ));
                         match *a {
-                            Tree::Node(node) => eq1_trees.push(node),
+                            Tree::Node(node) => a_nodes.push(node),
                             Tree::Eql(e_key) => {
-                                eq1_eqs.push(e_key);
+                                a_eqls.push(e_key);
                             },
                         }
                         match *b {
-                            Tree::Node(node) => eq2_trees.push(node),
+                            Tree::Node(node) => b_nodes.push(node),
                             Tree::Eql(e_key) => {
-                                eq2_eqs.push(e_key);
+                                b_eqls.push(e_key);
                             },
                         }
-                    },
-                    Node::Free { type_id } => {
-                        free.push(type_id);
-                    },
+                    }
                 }
             }
 
-            if free.len() > 0 {
-                if eq1_trees.len() == 0 && eq1_eqs.len() == 0 {
-                    let combined = self.types.insert(PartialType::Free(None));
-                    for f in free {
-                        *(self.types.get_mut(f).unwrap()) = PartialType::Var(combined);
-                    }
-                } else {
-                    let a = self.types.insert(PartialType::Free(None));
-                    let b = self.types.insert(PartialType::Free(None));
-                    for f in free {
-                        *(self.types.get_mut(f).unwrap()) = PartialType::Arrow(a, b);
-                    }
-                    eq1_trees.push(Node::Free { type_id: a });
-                    eq2_trees.push(Node::Free { type_id: b });
-                }
+            let type_a = self.new_type();
+            let type_b = self.new_type();
+            self.set_type(redex_type_key, PartialType::Arrow(type_a, type_b));
+
+            if a_eqls.len() > 0 {
+                self.merge_eq(type_a, a_eqls, a_nodes);
+            } else if a_nodes.len() > 0 {
+                self.redexes.push((type_a, a_nodes));
             }
 
-            if eq1_eqs.len() > 0 {
-                self.merge_eq(eq1_eqs, eq1_trees);
-            } else if eq1_trees.len() > 0 {
-                self.redexes.push(eq1_trees);
-            }
-            if eq2_eqs.len() > 0 {
-                self.merge_eq(eq2_eqs, eq2_trees);
-            } else if eq2_trees.len() > 0 {
-                self.redexes.push(eq2_trees);
+            if b_eqls.len() > 0 {
+                self.merge_eq(type_b, b_eqls, b_nodes);
+            } else if b_nodes.len() > 0 {
+                self.redexes.push((type_b, b_nodes));
             }
         }
         self.assert_valid();
     }
+
     pub fn read_type(&self, type_key: PartialTypeKey) -> Type {
-        let t = self.types.get(type_key).unwrap();
+        let t = self.get_type(type_key);
         match t {
             PartialType::Arrow(a, b) => Type::Arrow(Box::new(self.read_type(a.clone())), Box::new(self.read_type(b.clone()))),
             PartialType::Var(key) => self.read_type(key.clone()),
@@ -175,7 +152,8 @@ impl Net {
         }
     }
     pub fn new_eql(&mut self) -> Eql {
-        let eq_key = self.equations.insert(Equation {trees: vec![], refs: vec![]});
+        let eq_type = self.new_type();
+        let eq_key = self.equations.insert(Equation { type_key: eq_type, trees: vec![], refs: vec![]});
         let eq_ref = self.equation_refs.insert(EquationRef {key: eq_key, i: 0});
         self.eq_mut(eq_key).refs.push(eq_ref);
         self.assert_valid();
@@ -198,7 +176,7 @@ impl Net {
         if eq_refs.len() == 0 {
             let eq = self.equations.remove(eq_ref.key).unwrap();
             if eq.trees.len() > 0 {
-                self.redexes.push(eq.trees);
+                self.redexes.push((eq.type_key, eq.trees));
             }
         } else {
             for (i,r_k) in eq_refs.iter().enumerate() {
@@ -220,15 +198,21 @@ impl Net {
                 }
             }
         }
+
         if refs.len() == 0 {
-            self.redexes.push(nodes);
+            if nodes.len() > 0 {
+                let type_key = self.new_type();
+                self.redexes.push((type_key, nodes));
+            }
         } else {
-            self.merge_eq(refs, nodes);
+            let type_key = self.new_type();
+            self.merge_eq(type_key, refs, nodes);
         }
         self.assert_valid();
     }
     pub fn assert_valid(&self) {
-        for redex in self.redexes.iter() {
+        for (type_key, redex) in self.redexes.iter() {
+            assert!(self.types.contains_key(*type_key));
             for node in redex.iter() {
                 self.assert_valid_node(node);
             }
@@ -256,12 +240,10 @@ impl Net {
     }
     pub fn assert_valid_node(&self, node: &Node) {
         match node {
-            Node::Con { a, b } => {
+            Node::Con { type_key: type_id, a, b } => {
+                assert!(self.types.contains_key(*type_id));
                 self.assert_valid_tree(a);
                 self.assert_valid_tree(b);
-            }
-            Node::Free { .. } => {
-                ()
             }
         }
     }
@@ -287,7 +269,7 @@ impl Net {
     fn eq_ref_mut(&mut self, key: EquationRefKey) -> &mut EquationRef {
         self.equation_refs.get_mut(key).unwrap()
     }
-    fn merge_eq(&mut self, ref_keys: Vec<Eql>, trees: Vec<Node>) {
+    fn merge_eq(&mut self, eq_type: PartialTypeKey, ref_keys: Vec<Eql>, trees: Vec<Node>) {
         let mut hs = HashSet::<_>::new();
         let mut erased_refs = HashSet::<_>::new();
         for eql in ref_keys.iter() {
@@ -311,10 +293,11 @@ impl Net {
                 }
             }
             eq_trees.append(&mut eq.trees);
+            *(self.get_type_mut(eq.type_key)) = PartialType::Var(eq_type);
         }
 
         let eq_key = self.equations.insert(
-            Equation{ refs: vec![], trees: eq_trees}
+            Equation{ type_key: eq_type, refs: vec![], trees: eq_trees}
         );
 
         for (i,eq_ref) in eq_refs.iter().enumerate() {
@@ -328,8 +311,36 @@ impl Net {
 
         if self.eq(eq_key).refs.len() == 0 {
             let eq = self.equations.remove(eq_key).unwrap();
-            self.redexes.push(eq.trees);
+            if eq.trees.len() > 0 {
+                self.redexes.push((eq_type, eq.trees));
+            }
         }
         self.assert_valid();
+    }
+    pub fn type_key(&self, tree: &Tree) -> PartialTypeKey{
+        match tree {
+            Tree::Node(node) => {
+                match node {
+                    Node::Con { type_key: type_id,.. } => {
+                        *type_id
+                    }
+                }
+            }
+            Tree::Eql(eql, ..) => {
+                self.eq(self.eq_ref(eql.eq_ref).key).type_key
+            }
+        }
+    }
+    pub fn new_type(&mut self) -> PartialTypeKey {
+        self.types.insert(PartialType::Free(None))
+    }
+    fn get_type(&self, type_key: PartialTypeKey) -> &PartialType {
+        self.types.get(type_key).unwrap()
+    }
+    fn get_type_mut(&mut self, type_key: PartialTypeKey) -> &mut PartialType {
+        self.types.get_mut(type_key).unwrap()
+    }
+    fn set_type(&mut self, type_key: PartialTypeKey, type_to_set: PartialType){
+        *(self.get_type_mut(type_key)) = type_to_set;
     }
 }
