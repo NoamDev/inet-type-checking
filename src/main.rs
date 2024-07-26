@@ -16,7 +16,7 @@ fn main() {
     // }
     // let mut term = Expr::from_string("λx.(λn.λf.((f n) n) λn.λf.((f n) n))");
     // let mut term = Expr::from_string("λa.(λb.(b λc.(b λd.c)) λb.(b (b a)))");
-    let mut term = Expr::from_string("λx.(λf.((f x) x) λf.((f x) x))");
+    let mut term = Expr::from_string("(λx.λf.((f x) x) λx.λf.((f x) x))");
     // println!("{}", term);
     // if infer(&mut term) {
     //     let named_term = term.to_named(&mut vec![], &mut 0);
@@ -103,6 +103,7 @@ fn infer(term: &mut Expr) -> bool {
     let mut net = Net::default();
     let lam = add_lambda(&mut net, term, &mut vec![]);
     let type_key = net.type_key(&lam);
+    net.assert_valid();
     net.link(vec![], vec![lam]);
     net.assign_free_vars();
     net.read();

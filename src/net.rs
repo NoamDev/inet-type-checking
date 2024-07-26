@@ -419,6 +419,10 @@ impl Net {
         for (k, e) in self.edges.iter() {
             println!("{}", self.read_eq(e.type_key, &e.nodes, &e.refs));
         }
+        println!("types:");
+        for (k, t) in self.types.iter() {
+            println!("{}", self.read_type(k));
+        }
     }
     fn read_eq(&self, type_key: PartialTypeKey, trees: &Vec<Node>, refs: &Vec<EdgeRefKey>) -> String {
         let eq = trees.iter().map(|node| match node {
@@ -430,7 +434,7 @@ impl Net {
             Node::App(app) => {
                 let a_type = self.read_type(self.type_key(&app.a));
                 let b_type = self.read_type(self.type_key(&app.b));
-                format!("({a_type} {b_type})")
+                format!("@{a_type}.{b_type})")
             }
             Node::AffAnn(AffAnn(v)) => {
                 let v_type = self.read_type(self.type_key(v));
@@ -491,6 +495,7 @@ impl Net {
             }
             self.edges.get_mut(edge).unwrap().refs = link_refs;
         }
+        self.assert_valid();
         new_type
     }
 
@@ -509,48 +514,18 @@ impl Net {
         res
     }
 
-    // pub fn assert_valid(&self) {
-    //     for (type_key, redex) in self.redexes.iter() {
-    //         assert!(self.types.contains_key(*type_key));
-    //         for node in redex.iter() {
-    //             self.assert_valid_node(node);
-    //         }
-    //     }
-    //
-    //     for (var_key, var_rc) in self.vars.iter() {
-    //         assert!(var_rc.refs > 0);
-    //         self.assert_valid_var(&Var { key: var_key });
-    //     }
-    // }
-    // pub fn assert_valid_node(&self, node: &Node) {
-    //     match node {
-    //         Node::Lam(lam) => {
-    //             self.assert_valid_var(&lam.a);
-    //             self.assert_valid_var(&lam.b);
-    //         }
-    //
-    //         Node::App(_) => {}
-    //         Node::AffAnn(_) => {}
-    //         Node::AffChk(_) => {}
-    //         Node::NAffAnn(_) => {}
-    //         Node::NAffChk(_) => {}
-    //     }
-    // }
+    pub fn assert_valid(&self) {
+        for (type_key, redex) in self.redexes.iter() {
+            assert!(self.types.contains_key(*type_key));
+            // for node in redex.iter() {
+            //     self.assert_valid_node(node);
+            // }
+        }
 
-    // pub fn assert_valid_var(&self, var: &Var) {
-    //     assert!(self.vars.contains_key(var.key));
-    //     let var_rc = self.vars.get(var.key).unwrap();
-    //     assert!(var_rc.refs > 0);
-    //     match &var_rc.value {
-    //         VarValue::Ref { key } => {self.assert_valid_var(&Var { key: *key })}
-    //         VarValue::Nodes { nodes, type_key } => {
-    //             assert!(self.types.contains_key(*type_key));
-    //             for node in nodes {
-    //                 self.assert_valid_node(node);
-    //             }
-    //         }
-    //     }
-    // }
+        for (edge_key, edge) in self.edges.iter() {
+            assert!(edge.refs.len() > 0);
+        }
+    }
 
     /*
     fn merge_eq(&mut self, eq_type: PartialTypeKey, ref_keys: Vec<Eql>, trees: Vec<Node>) {
@@ -684,6 +659,10 @@ impl Net {
         let edge = self.edges.get_mut(edge_ref.edge).unwrap();
         edge.refs.remove(edge_ref.i);
         edge.nodes.push(node);
+        if edge.refs.len() == 0 {
+            let edge = self.edges.remove(edge_ref.edge).unwrap();
+            self.redexes.push((edge.type_key, edge.nodes));
+        }
     }
 
     pub fn new_type(&mut self) -> PartialTypeKey {
