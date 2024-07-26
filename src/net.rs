@@ -86,10 +86,10 @@ pub struct App {
     pub a: Var,
     pub b: Var,
 }
-pub struct AffAnn(Var);
-pub struct AffChk(Var);
-pub struct NAffAnn(Var);
-pub struct NAffChk(Var);
+pub struct AffAnn(pub Var);
+pub struct AffChk(pub Var);
+pub struct NAffAnn(pub Var);
+pub struct NAffChk(pub Var);
 
 pub enum Node {
     Lam(Lam),
@@ -114,7 +114,7 @@ impl Net {
         return self.redexes.len() > 0;
     }
     pub fn is_equated(&self) -> bool {
-        self.refs.len() == 0
+        self.edges.len() == 0
     }
     pub fn reduce(&mut self) {
         let r = self.redexes.pop();
@@ -410,52 +410,50 @@ impl Net {
         }
     }
 
-    /*
     pub fn read(&mut self) {
         println!("redexes:");
-        for (k, r) in self.redexes.iter() {
-            println!("{}", self.read_eq(r, &vec![]));
+        for (type_key, nodes) in self.redexes.iter() {
+            println!("{}", self.read_eq(*type_key, nodes, &vec![]));
         }
         println!("equations:");
-        for (k, r) in self.equations.iter() {
-            println!("{}", self.read_eq(&r.trees, &r.refs));
+        for (k, e) in self.edges.iter() {
+            println!("{}", self.read_eq(e.type_key, &e.nodes, &e.refs));
         }
     }
-    fn read_eq(&self, trees: &Vec<Node>, refs: &Vec<EquationRefKey>) -> String {
-        trees.iter().map(|node| match node {
-            Node::Con{ a, b } => {
-                if let (Type::Var(a_i), Type::Var(b_i)) =
-                        (self.read_type(self.type_key(a)), self.read_type(self.type_key(b)))
-                {
-                    format!("({}->{})", alphabetize(a_i), alphabetize(b_i))
-                } else {
-                    panic!("should be a var!");
-                }
+    fn read_eq(&self, type_key: PartialTypeKey, trees: &Vec<Node>, refs: &Vec<EdgeRefKey>) -> String {
+        let eq = trees.iter().map(|node| match node {
+            Node::Lam(lam) => {
+                let a_type = self.read_type(self.type_key(&lam.a));
+                let b_type = self.read_type(self.type_key(&lam.b));
+                format!("λ{a_type}.{b_type}")
             }
-            Node::Dup{ a } => {
-                if let Type::Var(i) = self.read_type(self.type_key(a)) {
-                    format!("!{}", alphabetize(i))
-                } else {
-                    panic!("should be a var!");
-                }
+            Node::App(app) => {
+                let a_type = self.read_type(self.type_key(&app.a));
+                let b_type = self.read_type(self.type_key(&app.b));
+                format!("({a_type} {b_type})")
             }
-            Node::Pud{ a } => {
-                if let Type::Var(i) = self.read_type(self.type_key(a)) {
-                    format!("?{}", alphabetize(i))
-                } else {
-                    panic!("should be a var!");
-                }
+            Node::AffAnn(AffAnn(v)) => {
+                let v_type = self.read_type(self.type_key(v));
+                format!("!{v_type}")
             }
-        }).chain(refs.iter().map(|ref_key| {
-            if let Type::Var(i)  = self.read_type(self.type_key(&Eql{eq_ref: *ref_key})) {
-                alphabetize(i)
-            } else {
-                panic!("should be a var!")
+            Node::AffChk(AffChk(v)) => {
+                let v_type = self.read_type(self.type_key(v));
+                format!("!{v_type}")
             }
-        }))
-            .join(" = ")
+            Node::NAffAnn(NAffAnn(v)) => {
+                let v_type = self.read_type(self.type_key(v));
+                format!("?{v_type}")
+            }
+            Node::NAffChk(NAffChk(v)) => {
+                let v_type = self.read_type(self.type_key(v));
+                format!("?{v_type}")
+            }
+        }).join(" = ");
+        let num_refs = refs.len();
+        let eq_type = self.read_type(type_key);
+        format!("{eq_type} := {eq}, {num_refs} refs")
     }
-    */
+
     pub fn link(&mut self, nodes: Vec<Node>, vars: Vec<Var>) -> PartialTypeKey {
         let mut edge_keys = HashSet::new();
         for var in vars {
@@ -467,12 +465,15 @@ impl Net {
 
         let mut link_nodes = nodes;
         let mut link_refs = vec![];
+
+        let new_type = self.new_type();
         for edge_key in edge_keys {
             let mut edge = self.edges.remove(edge_key).unwrap();
             link_nodes.append(&mut edge.nodes);
             link_refs.append(&mut edge.refs);
+            self.set_type(edge.type_key, PartialType::Var(new_type));
         }
-        let new_type = self.new_type();
+
         if link_refs.len() == 0 {
             if link_nodes.len() > 0 {
                 self.redexes.push((new_type, link_nodes));

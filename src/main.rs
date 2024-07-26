@@ -2,7 +2,7 @@ use std::vec;
 
 use lambda_optimization::lambda;
 use lambda_optimization::lambda::{app, Expr, lam, NamedExpr, NamedExprParser, var};
-use lambda_optimization::net::{App, Lam, Net, Node, Type, EdgeRef, Var};
+use lambda_optimization::net::{App, Lam, Net, Node, Type, EdgeRef, Var, AffChk, AffAnn};
 
 fn main() {
     // for mut term in lambda::enumerate_terms(15, 20) {
@@ -16,14 +16,14 @@ fn main() {
     // }
     // let mut term = Expr::from_string("λx.(λn.λf.((f n) n) λn.λf.((f n) n))");
     // let mut term = Expr::from_string("λa.(λb.(b λc.(b λd.c)) λb.(b (b a)))");
-    // let mut term = Expr::from_string("λx.(λf.((f x) x) λf.((f x) x))");
+    let mut term = Expr::from_string("λx.(λf.((f x) x) λf.((f x) x))");
     // println!("{}", term);
     // if infer(&mut term) {
     //     let named_term = term.to_named(&mut vec![], &mut 0);
     //     println!("{}",named_term.to_string());
     //     println!("is_safe_reduced: {}", safe_infer(&mut term));
     // }
-    let mut term = Expr::from_string("λx.x");
+    // let mut term = Expr::from_string("λx.λf.((f x) x)");
     if infer(&mut term) {
         println!("inferred!");
     }
@@ -32,11 +32,11 @@ fn main() {
 pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<Var>) -> Var {
     match lambda {
         Expr::Lam(b, type_key) => {
-            let var = net.new_var();
-            vars.push(var);
+            let a_var = net.new_var();
+            vars.push(a_var);
             let b_var = add_lambda(net, b, vars);
-            let var = vars.pop().unwrap();
-            let ref_count = net.var_refs_count(&var);
+            let a_var = vars.pop().unwrap();
+            let ref_count = net.var_refs_count(&a_var);
             assert!(ref_count > 0);
             let occurrences = ref_count - 1;
             let fan_label = if occurrences < 2 {
@@ -44,10 +44,23 @@ pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<Var>) -> Var 
             } else {
                Some(net.new_label())
             };
+            let (a_var, b_var) = match fan_label {
+                None => {(a_var, b_var)}
+                Some(_) => {
+                    (
+                        net.wrap(
+                            Node::AffChk(AffChk(a_var))
+                        ),
+                        net.wrap(
+                            Node::AffAnn(AffAnn(b_var))
+                        ),
+                    )
+                }
+            };
 
             let res = net.wrap(
                 Node::Lam (Lam {
-                    a: var,
+                    a: a_var,
                     b: b_var
                 })
             );
@@ -91,9 +104,12 @@ fn infer(term: &mut Expr) -> bool {
     let lam = add_lambda(&mut net, term, &mut vec![]);
     let type_key = net.type_key(&lam);
     net.link(vec![], vec![lam]);
+    net.assign_free_vars();
+    net.read();
     while net.is_reducible() {
-        net.assign_free_vars();
         net.reduce();
+        net.assign_free_vars();
+        net.read();
     }
     if net.is_equated() {
         net.assign_free_vars();
