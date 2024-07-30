@@ -2,7 +2,7 @@ use std::vec;
 
 use lambda_optimization::lambda;
 use lambda_optimization::lambda::{app, Expr, lam, NamedExpr, NamedExprParser, var};
-use lambda_optimization::net::{App, Lam, Net, Node, Type, EdgeRef, Var, AffChk, AffAnn};
+use lambda_optimization::net::{App, Lam, Net, Node, Type, EdgeRef, Var};
 
 fn main() {
     // for mut term in lambda::enumerate_terms(15, 20) {
@@ -16,7 +16,8 @@ fn main() {
     // }
     // let mut term = Expr::from_string("λx.(λn.λf.((f n) n) λn.λf.((f n) n))");
     // let mut term = Expr::from_string("λa.(λb.(b λc.(b λd.c)) λb.(b (b a)))");
-    let mut term = Expr::from_string("(λx.λf.((f x) x) λx.λf.((f x) x))");
+    // let mut term = Expr::from_string("(λx.λf.((f x) x) λx.λf.((f x) x))");
+    let mut term = Expr::from_string("(λf.λh.((h ((f λc.λg.((g c) c)) λe.e)) ((f λe.e) λc.λg.((g c) c))) λa.λb.(a b))");
     // println!("{}", term);
     // if infer(&mut term) {
     //     let named_term = term.to_named(&mut vec![], &mut 0);
@@ -29,34 +30,26 @@ fn main() {
     }
 }
 
-pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<Var>) -> Var {
+pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<(Var, usize)>) -> Var {
     match lambda {
         Expr::Lam(b, type_key) => {
             let a_var = net.new_var();
-            vars.push(a_var);
+            vars.insert(0, (a_var, 0));
             let b_var = add_lambda(net, b, vars);
-            let a_var = vars.pop().unwrap();
-            let ref_count = net.var_refs_count(&a_var);
-            assert!(ref_count > 0);
-            let occurrences = ref_count - 1;
+            let (a_var,occurrences) = vars.remove(0);
             let fan_label = if occurrences < 2 {
                 None
             } else {
                Some(net.new_label())
             };
-            let (a_var, b_var) = match fan_label {
-                None => {(a_var, b_var)}
-                Some(_) => {
-                    (
-                        net.wrap(
-                            Node::AffChk(AffChk(a_var))
-                        ),
-                        net.wrap(
-                            Node::AffAnn(AffAnn(b_var))
-                        ),
-                    )
-                }
-            };
+            // let a_var = match fan_label {
+            //     None => a_var,
+            //     Some(_) => {
+            //         let (a1, a2) = net.wire();
+            //         net.link(vec![Node::AffChk, Node::AffAnn], vec![a_var, a1]);
+            //         a2
+            //     }
+            // };
 
             let res = net.wrap(
                 Node::Lam (Lam {
@@ -83,7 +76,8 @@ pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<Var>) -> Var 
             res
         }
         Expr::Var(i, type_key) => {
-            let eql = &vars[vars.len() - *i - 1];
+            let (eql, occurrences) = &mut vars[*i];
+            *occurrences += 1;
             let res = net.add_var(eql);
             *type_key = Some(net.type_key(&res));
             res

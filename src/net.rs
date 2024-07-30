@@ -86,18 +86,13 @@ pub struct App {
     pub a: Var,
     pub b: Var,
 }
-pub struct AffAnn(pub Var);
-pub struct AffChk(pub Var);
-pub struct NAffAnn(pub Var);
-pub struct NAffChk(pub Var);
-
 pub enum Node {
     Lam(Lam),
     App(App),
-    AffAnn (AffAnn),
-    AffChk (AffChk),
-    NAffAnn (NAffAnn),
-    NAffChk (NAffChk),
+    AffAnn,
+    AffChk,
+    NAffAnn,
+    NAffChk,
 }
 
 #[derive(Default)]
@@ -127,16 +122,16 @@ impl Net {
                 match node {
                     Node::Lam(_) => {}
                     Node::App(_) => {}
-                    Node::AffAnn(_) => {
+                    Node::AffAnn => {
                         has_aff_ann = true;
                     }
-                    Node::AffChk(_) => {
+                    Node::AffChk => {
                         has_aff_chk = true;
                     }
-                    Node::NAffAnn(_) => {
+                    Node::NAffAnn => {
                         has_naff_ann = true;
                     }
-                    Node::NAffChk(_) => {
+                    Node::NAffChk => {
                         has_naff_chk = true;
                     }
                 }
@@ -166,10 +161,7 @@ impl Net {
             match node {
                 Node::Lam(lam) => result_nodes.push(Node::Lam(lam)),
                 Node::App(app) => result_nodes.push(Node::App(app)),
-                Node::AffAnn(AffAnn(var)) => result_vars.push(var),
-                Node::AffChk(AffChk(var)) => result_vars.push(var),
-                Node::NAffAnn(NAffAnn(var)) => result_vars.push(var),
-                Node::NAffChk(NAffChk(var)) => result_vars.push(var),
+                _ => ()
             }
         }
 
@@ -187,18 +179,18 @@ impl Net {
                     let node = if chk {
                         if affine {
                             let (a1, a2) = self.wire();
-                            self.link_var_node(lam.a, Node::NAffAnn(NAffAnn(a1)));
+                            self.link(vec![Node::NAffAnn], vec![a1, lam.a]);
                             let (b1, b2) = self.wire();
-                            self.link_var_node(lam.b, Node::AffChk(AffChk(b1)));
+                            self.link(vec![Node::AffChk], vec![b1, lam.b]);
                             Node::Lam(Lam {
                                 a: a2,
                                 b: b2,
                             })
                         } else {
                             let (a1, a2) = self.wire();
-                            self.link_var_node(lam.a, Node::AffAnn(AffAnn(a1)));
+                            self.link(vec![Node::AffAnn], vec![a1, lam.a]);
                             let (b1, b2) = self.wire();
-                            self.link_var_node(lam.b, Node::NAffChk(NAffChk(b1)));
+                            self.link(vec![Node::NAffChk], vec![b1, lam.b]);
                             Node::Lam(Lam {
                                 a: a2,
                                 b: b2,
@@ -213,18 +205,18 @@ impl Net {
                     let node = if ann {
                         if affine {
                             let (a1, a2) = self.wire();
-                            self.link_var_node(app.a, Node::NAffChk(NAffChk(a1)));
+                            self.link(vec![Node::NAffChk], vec![a1, app.a]);
                             let (b1, b2) = self.wire();
-                            self.link_var_node(app.b, Node::AffAnn(AffAnn(b1)));
+                            self.link(vec![Node::AffAnn], vec![b1, app.b]);
                             Node::App(App {
                                 a: a2,
                                 b: b2,
                             })
                         } else {
                             let (a1, a2) = self.wire();
-                            self.link_var_node(app.a, Node::AffChk(AffChk(a1)));
+                            self.link(vec![Node::AffChk], vec![a1, app.a]);
                             let (b1, b2) = self.wire();
-                            self.link_var_node(app.b, Node::NAffAnn(NAffAnn(b1)));
+                            self.link(vec![Node::NAffAnn], vec![b1, app.b]);
                             Node::App(App {
                                 a: a2,
                                 b: b2,
@@ -236,10 +228,7 @@ impl Net {
                     result_nodes.push(node);
 
                 },
-                Node::AffAnn(AffAnn(var)) => result_vars.push(var),
-                Node::AffChk(AffChk(var)) => result_vars.push(var),
-                Node::NAffAnn(NAffAnn(var)) => result_vars.push(var),
-                Node::NAffChk(NAffChk(var)) => result_vars.push(var),
+                _ => ()
             }
         }
 
@@ -251,7 +240,7 @@ impl Net {
         }
     }
 
-    fn reduce_cons(&mut self, redex_type_key: PartialTypeKey, nodes: Vec<Node>) {
+    fn reduce_cons(&mut self, redex_type_key: PartialTypeKey, nodes: Vec<Node>, ) {
         let mut link_a_vars = vec![];
         let mut link_b_vars = vec![];
 
@@ -419,10 +408,10 @@ impl Net {
         for (k, e) in self.edges.iter() {
             println!("{}", self.read_eq(e.type_key, &e.nodes, &e.refs));
         }
-        println!("types:");
-        for (k, t) in self.types.iter() {
-            println!("{}", self.read_type(k));
-        }
+        // println!("types:");
+        // for (k, t) in self.types.iter() {
+        //     println!("{}", self.read_type(k));
+        // }
     }
     fn read_eq(&self, type_key: PartialTypeKey, trees: &Vec<Node>, refs: &Vec<EdgeRefKey>) -> String {
         let eq = trees.iter().map(|node| match node {
@@ -434,23 +423,19 @@ impl Net {
             Node::App(app) => {
                 let a_type = self.read_type(self.type_key(&app.a));
                 let b_type = self.read_type(self.type_key(&app.b));
-                format!("@{a_type}.{b_type})")
+                format!("@{a_type}.{b_type}")
             }
-            Node::AffAnn(AffAnn(v)) => {
-                let v_type = self.read_type(self.type_key(v));
-                format!("!{v_type}")
+            Node::AffAnn => {
+                format!("!")
             }
-            Node::AffChk(AffChk(v)) => {
-                let v_type = self.read_type(self.type_key(v));
-                format!("!{v_type}")
+            Node::AffChk => {
+                format!("!")
             }
-            Node::NAffAnn(NAffAnn(v)) => {
-                let v_type = self.read_type(self.type_key(v));
-                format!("?{v_type}")
+            Node::NAffAnn => {
+                format!("?")
             }
-            Node::NAffChk(NAffChk(v)) => {
-                let v_type = self.read_type(self.type_key(v));
-                format!("?{v_type}")
+            Node::NAffChk => {
+                format!("?")
             }
         }).join(" = ");
         let num_refs = refs.len();
@@ -460,10 +445,10 @@ impl Net {
 
     pub fn link(&mut self, nodes: Vec<Node>, vars: Vec<Var>) -> PartialTypeKey {
         let mut edge_keys = HashSet::new();
+        let mut removed_refs = vec![];
         for var in vars {
             let edge_ref = self.refs.remove(var.edge_ref).unwrap();
-            let edge = self.edges.get_mut(edge_ref.edge).unwrap();
-            edge.refs.remove(edge_ref.i);
+            removed_refs.push(var.edge_ref);
             edge_keys.insert(edge_ref.edge);
         }
 
@@ -477,6 +462,8 @@ impl Net {
             link_refs.append(&mut edge.refs);
             self.set_type(edge.type_key, PartialType::Var(new_type));
         }
+
+        link_refs.retain(|r|!removed_refs.contains(r));
 
         if link_refs.len() == 0 {
             if link_nodes.len() > 0 {
@@ -646,12 +633,6 @@ impl Net {
         });
         self.refs.get_mut(edge_ref).unwrap().edge =  edge;
         Var {edge_ref}
-    }
-
-    pub fn var_refs_count(&mut self, var: &Var) -> usize {
-        let edge_ref = self.refs.get(var.edge_ref).unwrap();
-        let edge = self.edges.get(edge_ref.edge).unwrap();
-        edge.refs.len()
     }
 
     pub fn link_var_node(&mut self, var: Var, node: Node) {
