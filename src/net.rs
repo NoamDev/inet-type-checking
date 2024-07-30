@@ -404,7 +404,7 @@ impl Net {
             println!("{}", self.read_eq(*type_key, nodes, &vec![]));
         }
         println!("equations:");
-        for (k, e) in self.edges.iter() {
+        for (_k, e) in self.edges.iter() {
             println!("{}", self.read_eq(e.type_key, &e.nodes, &e.refs));
         }
         // println!("types:");
@@ -501,14 +501,14 @@ impl Net {
     }
 
     pub fn assert_valid(&self) {
-        for (type_key, redex) in self.redexes.iter() {
+        for (type_key, _redex) in self.redexes.iter() {
             assert!(self.types.contains_key(*type_key));
             // for node in redex.iter() {
             //     self.assert_valid_node(node);
             // }
         }
 
-        for (edge_key, edge) in self.edges.iter() {
+        for (_edge_key, edge) in self.edges.iter() {
             assert!(edge.refs.len() > 0);
         }
     }

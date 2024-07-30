@@ -99,7 +99,7 @@ fn is_dup_safe(term: &Expr, net: &Net) -> bool {
                 is_dup_safe(a, net) &&
                 is_dup_safe(b, net)
         }
-        Expr::Var(i, type_id) => {
+        Expr::Var(_i, type_id) => {
             is_safe_type(&net.read_type(type_id.unwrap()))
         }
     }

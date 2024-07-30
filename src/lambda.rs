@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::zip;
-use crate::net::{Net, PartialTypeKey, Type};
-use crate::util::alphabetize;
-use TSPL::Parser;
+
 use TSPL;
+use TSPL::Parser;
+
+use crate::net::{Net, PartialTypeKey};
+use crate::util::alphabetize;
+
 TSPL::new_parser!(NamedExprParser);
 
 #[derive(Debug)]
@@ -117,7 +120,7 @@ impl NamedExpr {
                 let annotation = net.read_type(type_key.unwrap()).to_string();
                 println!("({f_str} {v_str}) : {annotation}")
             }
-            NamedExpr::Var(var, type_key) => {}
+            NamedExpr::Var(_var, _type_key) => {}
         }
     }
 
