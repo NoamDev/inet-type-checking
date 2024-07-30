@@ -79,7 +79,6 @@ impl NamedExpr {
                 let body_str = body.to_string();
                 let lambda_type = net.read_type(type_key.unwrap());
                 let annotation = lambda_type.to_string();
-                println!("{}", annotation);
                 println!("λ{var}.{body_str} : {annotation}")
             }
             NamedExpr::App(f, v, type_key) => {

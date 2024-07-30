@@ -1,33 +1,15 @@
 use std::vec;
 
-use lambda_optimization::lambda;
-use lambda_optimization::lambda::{app, Expr, lam, NamedExpr, NamedExprParser, var};
-use lambda_optimization::net::{App, Lam, Net, Node, Type, EdgeRef, Var};
+use lambda_optimization::lambda::Expr;
+use lambda_optimization::net::{App, Lam, Net, Node, Type, Var};
 
 fn main() {
-    // for mut term in lambda::enumerate_terms(15, 20) {
-    //     if infer(&mut term) {
-    //         if ! safe_infer(&mut term) {
-    //             let named_term = term.to_named(&mut vec![], &mut 0);
-    //             println!("{}",named_term.to_string());
-    //         }
-    //         // println!("is_safe_reduced: {}", safe_infer(&mut term));
-    //     }
-    // }
     // let mut term = Expr::from_string("λx.(λn.λf.((f n) n) λn.λf.((f n) n))");
     // let mut term = Expr::from_string("λa.(λb.(b λc.(b λd.c)) λb.(b (b a)))");
     // let mut term = Expr::from_string("(λx.λf.((f x) x) λx.λf.((f x) x))");
-    let mut term = Expr::from_string("(λf.λh.((h ((f λc.λg.((g c) c)) λe.e)) ((f λe.e) λc.λg.((g c) c))) λa.λb.(a b))");
-    // println!("{}", term);
-    // if infer(&mut term) {
-    //     let named_term = term.to_named(&mut vec![], &mut 0);
-    //     println!("{}",named_term.to_string());
-    //     println!("is_safe_reduced: {}", safe_infer(&mut term));
-    // }
-    // let mut term = Expr::from_string("λx.λf.((f x) x)");
-    if infer(&mut term) {
-        println!("inferred!");
-    }
+    // let mut term = Expr::from_string("(λf.λh.((h ((f λc.λg.((g c) c)) λe.e)) ((f λe.e) λc.λg.((g c) c))) λa.λb.(a b))");
+    let mut term = Expr::from_string("λx.(λn.λf.((f n) n) λn.λf.((f n) n))");
+    infer(&mut term);
 }
 
 pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<(Var, usize)>) -> Var {
@@ -42,14 +24,14 @@ pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<(Var, usize)>
             } else {
                Some(net.new_label())
             };
-            // let a_var = match fan_label {
-            //     None => a_var,
-            //     Some(_) => {
-            //         let (a1, a2) = net.wire();
-            //         net.link(vec![Node::AffChk, Node::AffAnn], vec![a_var, a1]);
-            //         a2
-            //     }
-            // };
+            let a_var = match fan_label {
+                None => a_var,
+                Some(_) => {
+                    let (a1, a2) = net.wire();
+                    net.link(vec![Node::AffChk, Node::AffAnn], vec![a_var, a1]);
+                    a2
+                }
+            };
 
             let res = net.wrap(
                 Node::Lam (Lam {
@@ -85,100 +67,58 @@ pub fn add_lambda(net: &mut Net, lambda: &mut Expr, vars: &mut Vec<(Var, usize)>
     }
 }
 
-// fn annotate(expr: &Expr, net: &Net) -> String {
-//     match expr {
-//         Expr::Lam(_, _) => {}
-//         Expr::App(_, _, _) => {}
-//         Expr::Var(_, _) => {}
-//     }
-// }
-
-fn infer(term: &mut Expr) -> bool {
+fn infer(term: &mut Expr) {
     let mut net = Net::default();
     let lam = add_lambda(&mut net, term, &mut vec![]);
-    let type_key = net.type_key(&lam);
     net.assert_valid();
     net.link(vec![], vec![lam]);
-    net.assign_free_vars();
-    net.read();
     while net.is_reducible() {
         net.reduce();
-        net.assign_free_vars();
-        net.read();
     }
     if net.is_equated() {
         net.assign_free_vars();
-        let named = term.to_named();
-        named.print_annotated_terms(&net);
-        return true;
+        let named_term = term.to_named();
+        named_term.print_annotated_terms(&net);
+        if is_dup_safe(term, &net) {
+            println!("dup safe");
+        } else {
+            println!("not dup safe");
+        }
     } else {
-        return false;
+        println!("not stlc typable")
     }
 }
 
+fn is_dup_safe(term: &Expr, net: &Net) -> bool {
+    match term {
+        Expr::Lam(a, type_id) => {
+            is_safe_type(&net.read_type(type_id.unwrap())) && is_dup_safe(a, net)
+        }
+        Expr::App(a, b, type_id) => {
+            is_safe_type(&net.read_type(type_id.unwrap())) &&
+                is_dup_safe(a, net) &&
+                is_dup_safe(b, net)
+        }
+        Expr::Var(i, type_id) => {
+            is_safe_type(&net.read_type(type_id.unwrap()))
+        }
+    }
+}
 
-// fn safe_infer(term: &mut Expr) -> bool {
-//     let mut net = Net::default();
-//     let lam = add_lambda(&mut net, term, &mut vec![]);
-//     let type_key = net.type_key(&lam);
-//     net.link(vec![Tree::Eql(lam)]);
-//     // net.assign_free_vars();
-//     // net.read();
-//     while net.is_reducible() {
-//         // net.assign_free_vars();
-//         // net.read();
-//         net.safe_reduce();
-//         net.assert_valid();
-//     }
-//     // net.assign_free_vars();
-//     // net.read();
-//     if net.is_equated() {
-//         net.assign_free_vars();
-//         // let named_term = term.to_named(&mut vec![], &mut 0);
-//         // println!("{}", named_term.to_annotated_string(&net));
-//         // named_term.print_annotated_terms(&net);
-//         return true;
-//     } else {
-//         return false;
-//     }
-// }
-
-// fn is_safe_term(term: &Expr, net: &Net) -> bool {
-//     match term {
-//         Expr::Lam(b, type_key) => {
-//             let term_type = net.read_type(type_key.unwrap());
-//             is_safe_type(&term_type) && is_safe_term(b, &net)
-//         }
-//         Expr::App(f, v, type_key) => {
-//             let term_type = net.read_type(type_key.unwrap());
-//             is_safe_type(&term_type) && is_safe_term(f, &net) && is_safe_term(v, &net)
-//         }
-//         Expr::Var(i, type_key) => {
-//             let term_type = net.read_type(type_key.unwrap());
-//             is_safe_type(&term_type)
-//         }
-//     }
-// }
-//
-// fn is_safe_type(term_type: &Type) -> bool {
-//     match term_type {
-//         Type::Arrow { a, b, fan_labels} => {
-//             !contains_labels(a, fan_labels) && is_safe_type(a) && is_safe_type(b)
-//         }
-//         Type::Var(_) => {true}
-//     }
-// }
-//
-// fn contains_labels(term_type: &Type, labels: &Vec<usize>) -> bool {
-//     match term_type {
-//         Type::Arrow { a, b, fan_labels } => {
-//             // println!("Checking if {fan_labels:?} contains {labels:?}");
-//             labels.iter().any(|l| fan_labels.contains(l)) ||
-//                 contains_labels(a, labels) ||
-//                 contains_labels(b, labels)
-//         }
-//         Type::Var(_) => {
-//             false
-//         }
-//     }
-// }
+fn is_safe_type(t: &Type) -> bool {
+    match t {
+        Type::Arrow { a, b } => {
+            is_safe_type(a) && is_safe_type(b)
+        }
+        Type::Cloneable { a } => {
+            is_safe_type(a)
+        }
+        Type::Uncloneable { a } => {
+            is_safe_type(a)
+        }
+        Type::Unsafe { .. } => {false}
+        Type::Var(_) => {
+            true
+        }
+    }
+}
