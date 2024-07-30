@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::iter::zip;
-use std::{result, vec};
+use std::vec;
 
+use itertools::Itertools;
 use slotmap::{new_key_type, SlotMap};
 
 use crate::util::alphabetize;
-use itertools::Itertools;
 
 pub struct Var {
     edge_ref: EdgeRefKey,
@@ -69,7 +68,7 @@ impl Display for Type {
 impl Type {
     pub(crate) fn arg(self) -> Option<Type> {
         match self {
-            Type::Arrow { a, b } => Some(*a),
+            Type::Arrow { a, b: _b } => Some(*a),
             Type::Cloneable { a } => a.arg(),
             Type::Uncloneable { a } => a.arg(),
             Type::Unsafe { a } => a.arg(),
